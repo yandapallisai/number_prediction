@@ -11,6 +11,7 @@ CORS(app)
 # Load YOLO model
 # Use best.onnx OR best.pt
 model = YOLO("best.pt", task="detect")
+model.export(format="onnx")
 
 # Home route
 @app.route("/")
