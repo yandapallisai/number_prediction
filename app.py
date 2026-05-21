@@ -11,6 +11,7 @@ CORS(app)
 # Load YOLO model
 # Use best.onnx OR best.pt
 model = YOLO("best.pt", task="detect")
+model.export(format="onnx")
 
 # Home route
 @app.route("/")
@@ -140,9 +141,4 @@ def predict():
 
 # Run Flask
 if __name__ == "__main__":
-
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=True
-    )
+    app.run(host="0.0.0.0", port=5000)
