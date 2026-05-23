@@ -1,140 +1,564 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>7 Segment Detector</title>
 
-  <style>
-    body{
-      font-family: Arial, sans-serif;
-      background:#111;
-      color:white;
-      text-align:center;
-      padding:20px;
-    }
+    <meta charset="UTF-8">
 
-    video, canvas, img{
-      width:350px;
-      border-radius:10px;
-      border:2px solid #00ff88;
-      margin-top:15px;
-    }
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
-    button{
-      padding:12px 25px;
-      margin-top:20px;
-      border:none;
-      border-radius:8px;
-      background:#00ff88;
-      color:black;
-      font-size:18px;
-      cursor:pointer;
-      font-weight:bold;
-    }
+    <title>7 Segment Detector</title>
 
-    button:hover{
-      opacity:0.8;
-    }
+    <!-- ONNX Runtime -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
-    #result{
-      margin-top:20px;
-      font-size:28px;
-      color:#00ff88;
-      font-weight:bold;
-    }
-  </style>
+    <style>
+
+        body{
+
+            background:#111;
+
+            color:white;
+
+            font-family:Arial;
+
+            text-align:center;
+
+            padding:20px;
+        }
+
+        h1{
+
+            color:#00ff88;
+        }
+
+        video,
+        canvas{
+
+            width:320px;
+
+            border:3px solid #00ff88;
+
+            border-radius:10px;
+
+            margin-top:20px;
+        }
+
+        button{
+
+            margin-top:20px;
+
+            padding:12px 25px;
+
+            border:none;
+
+            border-radius:10px;
+
+            background:#00ff88;
+
+            color:black;
+
+            font-size:18px;
+
+            font-weight:bold;
+
+            cursor:pointer;
+        }
+
+        #result{
+
+            margin-top:20px;
+
+            font-size:32px;
+
+            color:#00ff88;
+
+            font-weight:bold;
+        }
+
+    </style>
+
 </head>
 
 <body>
 
-  <h1>7 Segment Display Reader</h1>
+    <h1>7 Segment Detector</h1>
 
-  <!-- Camera -->
-  <video id="video" autoplay playsinline></video>
+    <!-- CAMERA -->
+    <video id="video"
+           autoplay
+           playsinline>
+    </video>
 
-  <br>
+    <br>
 
-  <!-- Capture Button -->
-  <button onclick="captureImage()">Capture</button>
+    <!-- BUTTON -->
+    <button onclick="predict()">
+        Capture
+    </button>
 
-  <!-- Hidden Canvas -->
-  <canvas id="canvas" style="display:none;"></canvas>
+    <br><br>
 
-  <h3>Captured Image</h3>
-  <img id="preview">
+    <!-- CANVAS -->
+    <canvas id="canvas"></canvas>
 
-  <div id="result"></div>
+    <!-- RESULT -->
+    <div id="result"></div>
 
-  <script>
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const preview = document.getElementById("preview");
-    const resultDiv = document.getElementById("result");
+<script>
 
-    // Open Camera
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true
-        });
+    // ============================================
+    // GLOBALS
+    // ============================================
 
-        video.srcObject = stream;
+    let session;
 
-      } catch (err) {
-        alert("Camera access denied");
-        console.error(err);
-      }
+    const video =
+        document.getElementById("video");
+
+    const canvas =
+        document.getElementById("canvas");
+
+    const ctx =
+        canvas.getContext("2d");
+
+    const resultDiv =
+        document.getElementById("result");
+
+    // ============================================
+    // CLASS NAMES
+    // ============================================
+
+    const classNames = {
+
+        0:"0",
+        1:"1",
+        2:"2",
+        3:"3",
+        4:"4",
+        5:"5",
+        6:"6",
+        7:"7",
+        8:"8",
+        9:"9",
+        10:".",
+        11:"screen",
+        12:"unknown"
+    };
+
+    // ============================================
+    // START CAMERA
+    // ============================================
+
+    async function startCamera(){
+
+        try{
+
+            const stream =
+                await navigator.mediaDevices.getUserMedia({
+                    video:true
+                });
+
+            video.srcObject = stream;
+
+            console.log("Camera Started");
+        }
+        catch(error){
+
+            console.error(error);
+
+            alert("Camera Permission Denied");
+        }
     }
+
+    // ============================================
+    // LOAD MODEL
+    // ============================================
+
+    async function loadModel(){
+
+    try{
+
+        resultDiv.innerHTML =
+            "Loading Model...";
+
+        // LOAD MODEL FROM STATIC FOLDER
+        session =
+            await ort.InferenceSession.create(
+
+                "/static/best.onnx",
+
+                {
+
+                    executionProviders:["wasm"],
+
+                    graphOptimizationLevel:"all"
+                }
+            );
+
+        console.log(
+            "Model Loaded Successfully"
+        );
+
+        console.log(
+            "Input Names:",
+            session.inputNames
+        );
+
+        console.log(
+            "Output Names:",
+            session.outputNames
+        );
+
+        resultDiv.innerHTML =
+            "Model Loaded";
+    }
+    catch(error){
+
+        console.error(error);
+
+        resultDiv.innerHTML =
+            "Model Load Error";
+    }
+}
+
+    // ============================================
+    // PREPROCESS
+    // ============================================
+
+    function preprocess(imageData){
+
+        const {
+            data,
+            width,
+            height
+        } = imageData;
+
+        const input =
+            new Float32Array(
+                3 * width * height
+            );
+
+        for(let i=0;i<width*height;i++){
+
+            // R
+            input[i] =
+                data[i*4] / 255.0;
+
+            // G
+            input[i + width*height] =
+                data[i*4 + 1] / 255.0;
+
+            // B
+            input[i + 2*width*height] =
+                data[i*4 + 2] / 255.0;
+        }
+
+        return input;
+    }
+
+    // ============================================
+    // DRAW BOX
+    // ============================================
+
+    function drawBox(x1,y1,x2,y2,label){
+
+        ctx.strokeStyle = "#00ff88";
+
+        ctx.lineWidth = 2;
+
+        ctx.strokeRect(
+            x1,
+            y1,
+            x2 - x1,
+            y2 - y1
+        );
+
+        ctx.fillStyle = "#00ff88";
+
+        ctx.font = "18px Arial";
+
+        ctx.fillText(
+            label,
+            x1,
+            y1 - 10
+        );
+    }
+
+    // ============================================
+    // PREDICT
+    // ============================================
+
+    async function predict(){
+
+        try{
+
+            resultDiv.innerHTML =
+                "Running Inference...";
+
+            // ============================================
+            // DRAW FRAME
+            // ============================================
+
+            canvas.width = 640;
+            canvas.height = 640;
+
+            ctx.drawImage(
+                video,
+                0,
+                0,
+                640,
+                640
+            );
+
+            // ============================================
+            // IMAGE DATA
+            // ============================================
+
+            const imageData =
+                ctx.getImageData(
+                    0,
+                    0,
+                    640,
+                    640
+                );
+
+            // ============================================
+            // PREPROCESS
+            // ============================================
+
+            const input =
+                preprocess(imageData);
+
+            const tensor =
+                new ort.Tensor(
+
+                    "float32",
+
+                    input,
+
+                    [1,3,640,640]
+                );
+
+            // ============================================
+            // RUN MODEL
+            // ============================================
+
+            const inputName =
+                session.inputNames[0];
+
+            const results =
+                await session.run({
+
+                    [inputName]: tensor
+                });
+
+            // ============================================
+            // OUTPUT
+            // ============================================
+
+            const outputName =
+                session.outputNames[0];
+
+            const outputTensor =
+                results[outputName];
+
+            const output =
+                outputTensor.data;
+
+            const channels =
+                outputTensor.dims[1];
+
+            const detections =
+                outputTensor.dims[2];
+
+            const numClasses =
+                channels - 4;
+
+            console.log(
+                "Classes:",
+                numClasses
+            );
+
+            // ============================================
+            // DETECTIONS
+            // ============================================
+
+            const detected = [];
+
+            for(let i=0;i<detections;i++){
+
+                const x =
+                    output[i];
+
+                const y =
+                    output[detections + i];
+
+                const w =
+                    output[detections * 2 + i];
+
+                const h =
+                    output[detections * 3 + i];
+
+                let bestScore = 0;
+
+                let bestClass = -1;
+
+                // ============================================
+                // CLASS SCORES
+                // ============================================
+
+                for(let c=0;c<numClasses;c++){
+
+                    const score =
+                        output[
+                            (detections * (4 + c)) + i
+                        ];
+
+                    if(score > bestScore){
+
+                        bestScore = score;
+
+                        bestClass = c;
+                    }
+                }
+
+                // ============================================
+                // CONFIDENCE FILTER
+                // ============================================
+
+                if(bestScore > 0.5){
+
+                    const label =
+                        classNames[bestClass];
+
+                    // Ignore screen
+                    if(label === "screen"){
+                        continue;
+                    }
+
+                    // BOX
+                    const x1 =
+                        x - w/2;
+
+                    const y1 =
+                        y - h/2;
+
+                    const x2 =
+                        x + w/2;
+
+                    const y2 =
+                        y + h/2;
+
+                    detected.push({
+
+                        x:x,
+
+                        label:label,
+
+                        score:bestScore
+                    });
+
+                    // DRAW BOX
+                    drawBox(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        label
+                    );
+
+                    console.log(
+                        "Detected:",
+                        label,
+                        bestScore
+                    );
+                }
+            }
+
+            // ============================================
+            // REMOVE DUPLICATES
+            // ============================================
+
+            const filtered = [];
+
+            detected.forEach(item => {
+
+                const exists =
+                    filtered.some(f => {
+
+                        return Math.abs(
+                            f.x - item.x
+                        ) < 8;
+                    });
+
+                if(!exists){
+
+                    filtered.push(item);
+                }
+            });
+
+            // ============================================
+            // SORT LEFT TO RIGHT
+            // ============================================
+
+            filtered.sort((a,b) => {
+
+                return a.x - b.x;
+            });
+
+            // ============================================
+            // FINAL NUMBER
+            // ============================================
+
+            let finalNumber = "";
+
+            filtered.forEach(d => {
+
+                finalNumber += d.label;
+            });
+
+            console.log(
+                "FINAL:",
+                finalNumber
+            );
+
+            // ============================================
+            // SHOW RESULT
+            // ============================================
+
+            if(finalNumber.length > 0){
+
+                resultDiv.innerHTML =
+                    "Detected: " +
+                    finalNumber;
+            }
+            else{
+
+                resultDiv.innerHTML =
+                    "No Digits Found";
+            }
+        }
+        catch(error){
+
+            console.error(error);
+
+            resultDiv.innerHTML =
+                "Inference Error";
+        }
+    }
+
+    // ============================================
+    // START
+    // ============================================
 
     startCamera();
 
-    // Capture Image
-    async function captureImage() {
+    loadModel();
 
-      const context = canvas.getContext("2d");
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      context.drawImage(video, 0, 0);
-
-      // Convert image to blob
-      canvas.toBlob(async (blob) => {
-
-        // Preview image
-        preview.src = URL.createObjectURL(blob);
-
-        // Send to backend
-        const formData = new FormData();
-        formData.append("image", blob, "capture.png");
-
-        try {
-
-          const response = await fetch("http://127.0.0.1:5000/predict", {
-            method: "POST",
-            body: formData
-          });
-
-          const data = await response.json();
-
-          console.log(data);
-
-          resultDiv.innerHTML =
-            "Detected Number: " + data.number;
-
-        } catch (error) {
-
-          console.error(error);
-
-          resultDiv.innerHTML =
-            "Error sending image to backend";
-
-        }
-
-      }, "image/png");
-    }
-  </script>
+</script>
 
 </body>
+
 </html>
